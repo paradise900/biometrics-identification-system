@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FaceID - Система идентификации</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <div class="logo">
+                <i class="fas fa-user-shield"></i>
+                <span>FaceID</span>
+            </div>
+            <nav class="nav-links">
+                <a href="#"><i class="fas fa-home"></i> Главная</a>
+                <a href="#"><i class="fas fa-info-circle"></i> О системе</a>
+                <a href="#"><i class="fas fa-cog"></i> Настройки</a>
+            </nav>
+        </header>
+
+        <main class="main-content">
+            <div class="identification-card">
+                <div class="card-header">
+                    <h1><i class="fas fa-camera"></i> Идентификация личности</h1>
+                    <p>Встаньте перед камерой и нажмите кнопку идентификации</p>
+                </div>
+
+                <div class="video-container">
+                    <div class="video-wrapper">
+                        <video id="video" autoplay playsinline></video>
+                        <div class="scan-animation"></div>
+                    </div>
+                    <div class="controls">
+                        <button id="captureBtn" class="btn-primary">
+                            <i class="fas fa-fingerprint"></i> Идентифицировать
+                        </button>
+                        <div class="camera-options">
+                            <button id="switchCamera" class="btn-icon" title="Переключить камеру">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                            <button id="fullscreenBtn" class="btn-icon" title="Полный экран">
+                                <i class="fas fa-expand"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="result" class="result-container">
+                    <div class="placeholder">
+                        <i class="fas fa-user-circle"></i>
+                        <p>Здесь появится результат идентификации</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="app-footer">
+            <p>© 2023 FaceID System. Все права защищены.</p>
+            <div class="footer-links">
+                <a href="#"><i class="fas fa-shield-alt"></i> Безопасность</a>
+                <a href="#"><i class="fas fa-envelope"></i> Контакты</a>
+            </div>
+        </footer>
+    </div>
+
+    <canvas id="canvas" style="display: none;"></canvas>
+
+    <script>
+        // Элементы страницы
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const captureBtn = document.getElementById('captureBtn');
+        const switchCameraBtn = document.getElementById('switchCamera');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const resultDiv = document.getElementById('result');
+        const videoWrapper = document.querySelector('.video-wrapper');
+        
+        // Состояние приложения
+        let currentStream = null;
+        let facingMode = "user"; // front camera by default
+        
+        // Инициализация камеры
+        async function initCamera() {
+            try {
+                // Останавливаем предыдущий поток, если есть
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                }
+                
+                const constraints = {
+                    video: { 
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: facingMode
+                    },
+                    audio: false 
+                };
+                
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                currentStream = stream;
+                video.srcObject = stream;
+                
+                // Устанавливаем размеры canvas
+                const settings = stream.getVideoTracks()[0].getSettings();
+                canvas.width = settings.width;
+                canvas.height = settings.height;
+                
+                // Анимация сканирования
+                startScanAnimation();
+                
+            } catch (err) {
+                console.error("Ошибка доступа к камере:", err);
+                showError(`
+                    <i class="fas fa-video-slash"></i>
+                    <h3>Ошибка доступа к камере</h3>
+                    <p>Пожалуйста, разрешите доступ к камере и обновите страницу</p>
+                    <button onclick="window.location.reload()" class="btn-secondary">
+                        <i class="fas fa-sync-alt"></i> Обновить страницу
+                    </button>
+                `);
+            }
+        }
+        
+        // Анимация сканирования
+        function startScanAnimation() {
+            const scanElement = document.querySelector('.scan-animation');
+            scanElement.style.animation = 'scan 4s infinite';
+        }
+        
+        // Переключение камеры
+        async function switchCamera() {
+            facingMode = facingMode === "user" ? "environment" : "user";
+            await initCamera();
+        }
+        
+        // Полноэкранный режим
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                videoWrapper.requestFullscreen().catch(err => {
+                    console.error(`Ошибка при переходе в полноэкранный режим: ${err.message}`);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+        
+        // Сделать фото и отправить на сервер
+        async function captureAndIdentify() {
+            // Показываем индикатор загрузки
+            resultDiv.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Идет идентификация...</p>
+                </div>
+            `;
+            
+            // Получаем контекст canvas
+            const context = canvas.getContext('2d');
+            
+            // Рисуем текущий кадр видео на canvas
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Преобразуем canvas в blob
+            canvas.toBlob(async (blob) => {
+                try {
+                    // Создаем FormData и добавляем изображение
+                    const formData = new FormData();
+                    formData.append('photo', blob, 'capture.jpg');
+                    
+                    // Отправляем на сервер
+                    const response = await fetch('/identify', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const data = await response.json();
+                    
+                    // Обрабатываем ответ
+                    if (!response.ok) {
+                        throw new Error(data.error || 'Ошибка сервера');
+                    }
+                    
+                    if (data.status === 'success') {
+                        displayUserInfo(data.user);
+                    } else {
+                        showError(`
+                            <i class="fas fa-user-times"></i>
+                            <h3>Пользователь не найден</h3>
+                            <p>Попробуйте еще раз или проверьте освещение</p>
+                            <button onclick="captureAndIdentify()" class="btn-secondary">
+                                <i class="fas fa-redo"></i> Попробовать снова
+                            </button>
+                        `);
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    showError(`
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <h3>Ошибка идентификации</h3>
+                        <p>${error.message || 'Произошла ошибка при обработке запроса'}</p>
+                        <button onclick="captureAndIdentify()" class="btn-secondary">
+                            <i class="fas fa-redo"></i> Попробовать снова
+                        </button>
+                    `);
+                }
+            }, 'image/jpeg', 0.9);
+        }
+        
+        // Отображаем информацию о пользователе
+        function displayUserInfo(user) {
+            resultDiv.innerHTML = `
+                <div class="user-card">
+                    <div class="user-avatar">
+                        <img src="/images/${user.photo}" alt="${user.name}">
+                        <div class="verified-badge">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                    </div>
+                    <div class="user-info">
+                        <h2>${user.name}</h2>
+                        <div class="user-meta">
+                            <div class="meta-item">
+                                <i class="fas fa-id-card"></i>
+                                <span>ID: ${user.id || 'N/A'}</span>
+                            </div>
+                            <div class="meta-item">
+                                <i class="fas fa-briefcase"></i>
+                                <span>${user.position || 'Должность не указана'}</span>
+                            </div>
+                            <div class="meta-item">
+                                <i class="fas fa-building"></i>
+                                <span>${user.department || 'Отдел не указан'}</span>
+                            </div>
+                            <div class="meta-item">
+                                <i class="fas fa-clock"></i>
+                                <span>Последний вход: ${user.last_seen || 'Неизвестно'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="user-actions">
+                        <button class="btn-action">
+                            <i class="fas fa-envelope"></i> Сообщение
+                        </button>
+                        <button class="btn-action">
+                            <i class="fas fa-calendar-alt"></i> Запись
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            // Анимация появления
+            setTimeout(() => {
+                document.querySelector('.user-card').style.opacity = '1';
+                document.querySelector('.user-card').style.transform = 'translateY(0)';
+            }, 50);
+        }
+        
+        // Показать ошибку
+        function showError(content) {
+            resultDiv.innerHTML = `
+                <div class="error-card">
+                    ${content}
+                </div>
+            `;
+        }
+        
+        // Инициализация при загрузке страницы
+        document.addEventListener('DOMContentLoaded', () => {
+            initCamera();
+            
+            // Назначаем обработчики
+            captureBtn.addEventListener('click', captureAndIdentify);
+            switchCameraBtn.addEventListener('click', switchCamera);
+            fullscreenBtn.addEventListener('click', toggleFullscreen);
+            
+            // Обработчик изменения размера окна
+            window.addEventListener('resize', () => {
+                if (document.fullscreenElement) {
+                    videoWrapper.style.width = '100%';
+                    videoWrapper.style.height = '100%';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
