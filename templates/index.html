@@ -183,6 +183,12 @@
                     if (!response.ok) {
                         throw new Error(data.error || 'Ошибка сервера');
                     }
+
+                    // В функции captureAndIdentify:
+                    if (data.status === 'error') {
+                        displayError(data.error || 'Обнаружена попытка обмана системы');
+                        return;
+                    }
                     
                     if (data.status === 'success') {
                         displayUserInfo(data.user);
@@ -208,6 +214,8 @@
                     `);
                 }
             }, 'image/jpeg', 0.9);
+
+            
         }
 
         // Отображаем информацию о пользователе
@@ -276,6 +284,20 @@
                 }
             });
         });
+
+        function displayError(message) {
+            resultDiv.innerHTML = `
+                <div class="error-card">
+                    <i class="fas fa-ban"></i>
+                    <h3>Ошибка проверки</h3>
+                    <p>${message}</p>
+                    <button onclick="captureAndIdentify()" class="btn-secondary">
+                        <i class="fas fa-redo"></i> Попробовать снова
+                    </button>
+                </div>
+            `;
+        }
+
     </script>
 </body>
 </html>

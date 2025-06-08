@@ -1,6 +1,7 @@
 images/
 photos_db/
 instance/
+tex/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -3,6 +3,8 @@ from flask_sqlalchemy import SQLAlchemy
 import os
 from datetime import datetime
 from deepface import DeepFace
+import cv2 
+
 
 app = Flask(__name__)
 
@@ -73,8 +75,10 @@ def identify_user():
         filepath = os.path.join(UPLOAD_FOLDER, filename)
         file.save(filepath)
         
-        result = get_user(filepath)
+        # Проверка с anti-spoofing
+        result = get_user_with_anti_spoofing(filepath)
         
+        # Удаляем временный файл
         try:
             os.remove(filepath)
         except:
@@ -85,13 +89,15 @@ def identify_user():
         
         if result.get('status') == 'error':  # Если обнаружен спуфинг
             return jsonify(result), 403
-        
+            
+        # Получаем ID из имени файла
         try:
             photo_name = os.path.basename(result['user']['photo'])
             user_id = int(os.path.splitext(photo_name)[0])
         except:
             return jsonify({'status': 'error', 'error': 'Неверный формат ID'}), 400
             
+        # Ищем пользователя в БД
         user = User.query.get(user_id)
         
         if not user:
@@ -104,34 +110,48 @@ def identify_user():
     
     return jsonify({'status': 'error', 'error': 'Неподдерживаемый формат файла'}), 400
 
-def get_user(src_image_path):
+def get_user_with_anti_spoofing(src_image_path):
     try:
-        finding_res = DeepFace.find(
-            img_path=src_image_path,
-            db_path=DB_FOLDER,
-            model_name='Facenet512',
-            detector_backend='retinaface',
-            distance_metric='cosine',
-            threshold=0.7,
-            anti_spoofing=True,
+        # Загружаем изображение
+        img = cv2.imread(src_image_path)
+        
+        # Проверка на спуфинг
+        spoof_check = DeepFace.analyze(
+            img_path=img,
+            actions=['spoof'],
+            detector_backend='opencv',
             silent=True
         )
         
-        if len(finding_res) > 0 and len(finding_res[0]) > 0:
-            person = finding_res[0]['identity'][0]
+        # Если обнаружен спуфинг (фото вместо реального лица)
+        if spoof_check[0]['is_spoof']:
+            return {
+                'status': 'error',
+                'error': 'Обнаружена попытка обмана системы (использование фото вместо реального лица)'
+            }
+        
+        # Если проверка на спуфинг пройдена, ищем лицо в базе
+        finding_res = DeepFace.find(
+            img_path=img,
+            db_path=DB_FOLDER,
+            model_name='Facenet512',
+            detector_backend='yolov8',
+            distance_metric='cosine',
+            enforce_detection=True,
+            silent=True
+        )
+        
+        if len(finding_res) > 0 and not finding_res[0].empty:
+            best_match = finding_res[0].iloc[0]
             return {
                 'status': 'success',
                 'user': {
-                    'photo': os.path.basename(person).split('_')[0]
+                    'photo': os.path.basename(best_match['identity'])
                 }
             }
         return None
+        
     except Exception as e:
-        if str(e) == 'Spoof detected in the given image.':
-            return {
-                "status": "error",
-                "error": "Система обнаружила возможную подделку (фото/видео вместо реального лица)"
-            }
         app.logger.error(f"Face recognition error: {str(e)}")
         return None
 
