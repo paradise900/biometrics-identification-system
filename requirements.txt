@@ -1,6 +1,10 @@
-flask==3.0.2
-werkzeug==3.0.1
-flask-sqlalchemy==3.1.1
-sqlalchemy==2.0.25
 deepface==0.0.93
-python-dotenv==1.0.1
+tensorflow==2.15.0
+tf-keras==2.15.1
+opencv-python>=4.6.0
+numpy>=1.21.0
+fastapi>=0.95.0
+uvicorn>=0.22.0
+sqlalchemy>=2.0.0
+python-multipart>=0.0.6
+torch
