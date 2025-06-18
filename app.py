@@ -200,7 +200,7 @@ async def identify_user(photo: UploadFile = File(...)):
         )
     
     try:
-        photo_name = os.path.basename(result['user']['photo'])
+        photo_name = os.path.basename(result['user']['photo']) # type: ignore
         user_id = int(os.path.splitext(photo_name)[0])
     except Exception as e:
         logging.error(f"ID extraction error: {str(e)}")

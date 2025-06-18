@@ -3,6 +3,8 @@ photos_db/
 instance/
 tex/
 
+.DS_Store
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
